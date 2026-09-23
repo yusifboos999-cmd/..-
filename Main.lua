@@ -1,6 +1,6 @@
 -- ============================================
--- Accurate Chat & Name 1B+ Finder (Delta Executor)
--- Steal an Egg! - Mobile Friendly
+-- 100% Synced Game-Timer & 1B+ Chat Finder
+-- Steal an Egg! - Delta Executor
 -- ============================================
 
 local github_raw_url = "https://raw.githubusercontent.com/yusifboos999-cmd/..-/refs/heads/main/Main.lua"
@@ -12,18 +12,18 @@ local CoreGui = game:GetService("CoreGui")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
--- قائمة الحيوانات المطلوبة حصراً
+-- قائمة أسماء الحيوانات النادرة (1B+)
 local HighTier1BPets = {
     "aetheron", "archangel", "world burner", "nightflame", 
     "kitsune", "unicorn", "shattered colossus", "dreadscale", "equinox"
 }
 
--- الكلمات المفتاحية في الشات عند ترسبن حيوان نادر
+-- الكلمات المفتاحية لتنبيهات الشات
 local RareSpawnKeywords = {
     "spawn", "eternal", "divine", "secret", "1b"
 }
 
-local guiName = "Delta_Fixed_1BPrompt_UI"
+local guiName = "Delta_ExactTimer_1B_UI"
 local parentGui = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 
 if parentGui:FindFirstChild(guiName) then
@@ -80,7 +80,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -10, 0, 30)
 titleLabel.Position = UDim2.new(0, 10, 0, 5)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "صايد 1B+ (دقيق بـ الشات) 💎"
+titleLabel.Text = "صايد 1B+ (عداد دقيق 100%) 💎"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 13
 titleLabel.Font = Enum.Font.SourceSansBold
@@ -92,7 +92,7 @@ statusLabel.Size = UDim2.new(0.92, 0, 0, 55)
 statusLabel.Position = UDim2.new(0.04, 0, 0.26, 0)
 statusLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
 statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-statusLabel.Text = "⏱️ جاري حساب وقت رسبون الماب..."
+statusLabel.Text = "⏱️ جاري جلب عداد اللعبة..."
 statusLabel.TextSize = 13
 statusLabel.TextWrapped = true
 statusLabel.Font = Enum.Font.SourceSansBold
@@ -120,7 +120,7 @@ toggleBtn.MouseButton1Click:Connect(function()
     mainFrame.Visible = not mainFrame.Visible
 end)
 
--- تنفيذ التنقل
+-- تنفيذ الانتقال
 local function executeTeleport(targetJobId)
     local queueFunc = queue_on_teleport or syn.queue_on_teleport or queueonteleport
     if queueFunc then
@@ -134,9 +134,9 @@ local function executeTeleport(targetJobId)
     end
 end
 
--- دالة التبديل بين السيرفرات المباشرة بدون تعليق
+-- دالة التنقل بين السيرفرات
 local function serverHop()
-    statusLabel.Text = "🔄 جاري النقل لسيرفر جديد..."
+    statusLabel.Text = "🔄 جاري البحث عن سيرفر جديد..."
     statusLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
     
     task.spawn(function()
@@ -159,28 +159,53 @@ local function serverHop()
             end
         end
 
-        -- الانتقال فوراً للسيرفر المحدد أو السيرفر التلقائي إذا فشل الـ API
         executeTeleport(targetServer)
     end)
 end
 
 manualHopBtn.MouseButton1Click:Connect(serverHop)
 
--- دالة الفحص الدقيق عبر الشات وأسماء المجسمات
-local function check1BPetAccurate()
-    -- 1. فحص مجسمات الأرض بالاسم الصريح فقط
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local objName = string.lower(obj.Name)
-            for _, petName in ipairs(HighTier1BPets) do
-                if string.find(objName, petName) then
-                    return "اسم الحيوان: " .. obj.Name
+-- دالة قراءة الوقت المتبقي المباشر من واجهة اللعبة (مثل أسفل اليمين)
+local function getExactGameTimeLeft()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        for _, guiElement in ipairs(playerGui:GetDescendants()) do
+            if guiElement:IsA("TextLabel") or guiElement:IsA("TextButton") then
+                local txt = guiElement.Text
+                -- قراءة صيغ مثل "in 4m 23s" أو "4m 23s"
+                local m, s = string.match(txt, "(%d+)m%s*(%d+)s")
+                if m and s then
+                    return tonumber(m) * 60 + tonumber(s)
+                end
+                -- قراءة صيغ مثل "04:23"
+                local m2, s2 = string.match(txt, "(%d+):(%d+)")
+                if m2 and s2 and tonumber(m2) <= 5 then
+                    return tonumber(m2) * 60 + tonumber(s2)
                 end
             end
         end
     end
 
-    -- 2. فحص رسائل الشات الحالية
+    -- احتياطي: استخدام وقت السيرفر الفعلي
+    local serverTime = math.floor(Workspace:GetServerTimeNow())
+    return 300 - (serverTime % 300)
+end
+
+-- دالة الفحص عبر الشات وأسماء المجسمات فقط
+local function check1BPetAccurate()
+    -- 1. فحص مجسمات الأرض
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local objName = string.lower(obj.Name)
+            for _, petName in ipairs(HighTier1BPets) do
+                if string.find(objName, petName) then
+                    return "الحيوان: " .. obj.Name
+                end
+            end
+        end
+    end
+
+    -- 2. فحص رسائل الشات
     local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat") or CoreGui:FindFirstChild("Chat")
     if chatGui then
         for _, label in ipairs(chatGui:GetDescendants()) do
@@ -188,7 +213,7 @@ local function check1BPetAccurate()
                 local txt = string.lower(label.Text)
                 for _, kw in ipairs(RareSpawnKeywords) do
                     if string.find(txt, kw) then
-                        return "تنبيه الشات: " .. label.Text
+                        return "الشات: " .. label.Text
                     end
                 end
             end
@@ -276,7 +301,7 @@ local function showPrompt()
     task.spawn(function()
         for i = 10, 1, -1 do
             if responded then break end
-            promptText.Text = "لم يترسبن حيوان نادر في الشات/الماب!\nهل تريد الانتقال لسيرفر آخر؟\n(" .. i .. " ثوانٍ)"
+            promptText.Text = "لم يترسبن حيوان نادر!\nهل تريد الانتقال لسيرفر آخر؟\n(" .. i .. " ثوانٍ)"
             task.wait(1)
         end
         if not responded then
@@ -288,29 +313,23 @@ local function showPrompt()
     end)
 end
 
--- حساب التوقيت المتبقي لانتهاء دورة 5 دقائق
-local function getTimeRemainingIn5MinCycle()
-    local now = os.time()
-    return 300 - (now % 300)
-end
-
--- الحلقة الرئيسية المتزامنة مع الماب
+-- الحلقة الرئيسية المتزامنة تماماً مع اللعبة
 task.spawn(function()
     while true do
-        local timeLeft = getTimeRemainingIn5MinCycle()
+        local timeLeft = getExactGameTimeLeft()
         
-        while timeLeft > 2 do
-            timeLeft = getTimeRemainingIn5MinCycle()
+        while timeLeft > 1 do
+            timeLeft = getExactGameTimeLeft()
             local mins = math.floor(timeLeft / 60)
             local secs = timeLeft % 60
-            statusLabel.Text = string.format("⏳ باقي على رسبون الماب القادم:\n%02d:%02d", mins, secs)
+            statusLabel.Text = string.format("⏳ باقي على رسبون اللعبة:\n%02d:%02d", mins, secs)
             statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-            task.wait(1)
+            task.wait(0.5) -- تحديث سريع جداً لمنع أي تأخير
         end
 
-        statusLabel.Text = "⚡ رسبن الماب الآن! جاري فحص الشات والماب..."
+        statusLabel.Text = "⚡ رسبن الماب الآن! جاري فحص الشات..."
         statusLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
-        task.wait(3) -- انتظار ثوانٍ حتى تصل إشعارات الشات ورسبون الكائنات
+        task.wait(2.5) -- انتظار ثانيتين لوصول رسالة الشات والرسبون
 
         local foundPet = check1BPetAccurate()
 
