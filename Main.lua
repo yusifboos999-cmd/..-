@@ -1,6 +1,6 @@
 -- ============================================
--- 5-Min Synced Timer & 1B+ Finder (Delta Executor)
--- Steal an Egg! - Mobile Friendly
+-- 5-Min Synced Timer & Accurate 1B+ Finder
+-- Steal an Egg! - Delta Executor
 -- ============================================
 
 local github_raw_url = "https://raw.githubusercontent.com/yusifboos999-cmd/..-/refs/heads/main/Main.lua"
@@ -12,7 +12,13 @@ local CoreGui = game:GetService("CoreGui")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
--- قائمة حيوانات الـ 1B+ المطلوب التنبيه عليها
+-- قائمة السيرفرات المزارة لمنع التكرار
+if _G.VisitedServers == nil then
+    _G.VisitedServers = {}
+end
+table.insert(_G.VisitedServers, game.JobId)
+
+-- قائمة الحيوانات العالية (1B+)
 local HighTier1BPets = {
     "Aetheron", "ArchAngel", "World Burner", "Nightflame", 
     "Kitsune", "Unicorn", "Shattered Colossus", "Dreadscale", "Equinox"
@@ -75,7 +81,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -10, 0, 30)
 titleLabel.Position = UDim2.new(0, 10, 0, 5)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "صايد 1B+ (عداد 5 دقائق) ⏱️"
+titleLabel.Text = "صايد 1B+ (دقيق وتلقائي) 💎"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 13
 titleLabel.Font = Enum.Font.SourceSansBold
@@ -115,72 +121,128 @@ toggleBtn.MouseButton1Click:Connect(function()
     mainFrame.Visible = not mainFrame.Visible
 end)
 
--- وظيفة الانتقال عبر queue_on_teleport
+-- الانتقال وتمرير قائمة السيرفرات المزارة للسكربت الجديد
 local function executeTeleport(targetJobId)
     local queueFunc = queue_on_teleport or syn.queue_on_teleport or queueonteleport
     if queueFunc then
-        queueFunc(string.format('loadstring(game:HttpGet("%s"))()', github_raw_url))
+        local visitedStr = "{"
+        for _, id in ipairs(_G.VisitedServers) do
+            visitedStr = visitedStr .. '"' .. id .. '",'
+        end
+        visitedStr = visitedStr .. "}"
+        queueFunc(string.format('_G.VisitedServers = %s; loadstring(game:HttpGet("%s"))()', visitedStr, github_raw_url))
     end
     
-    if targetJobId then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, targetJobId, LocalPlayer)
-    else
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end
+    TeleportService:TeleportToPlaceInstance(game.PlaceId, targetJobId, LocalPlayer)
 end
 
+-- التنقل الذكي بين السيرفرات بدون تكرار السيرفر الحالي
 local function serverHop()
-    statusLabel.Text = "🔄 جاري البحث عن سيرفر جديد..."
+    statusLabel.Text = "🔄 جاري البحث عن سيرفر جديد لم تدرخله من قبل..."
     statusLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
     
     task.spawn(function()
         local placeId = game.PlaceId
         local currentJobId = game.JobId
-        local servers = {}
+        local foundServer = nil
+        local cursor = ""
 
-        local success, result = pcall(function()
-            local req = game:HttpGet("https://games.roproxy.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100")
-            return HttpService:JSONDecode(req)
-        end)
+        for page = 1, 3 do
+            local url = "https://games.roproxy.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+            if cursor ~= "" then
+                url = url .. "&cursor=" .. cursor
+            end
 
-        if success and result and result.data then
-            for _, s in ipairs(result.data) do
-                if type(s) == "table" and s.id ~= currentJobId and s.playing < s.maxPlayers then
-                    table.insert(servers, s.id)
+            local success, result = pcall(function()
+                return HttpService:JSONDecode(game:HttpGet(url))
+            end)
+
+            if success and result and result.data then
+                local validServers = {}
+                for _, s in ipairs(result.data) do
+                    if type(s) == "table" and s.id ~= currentJobId and s.playing < s.maxPlayers then
+                        local visited = false
+                        if _G.VisitedServers then
+                            for _, vId in ipairs(_G.VisitedServers) do
+                                if vId == s.id then
+                                    visited = true
+                                    break
+                                end
+                            end
+                        end
+                        if not visited then
+                            table.insert(validServers, s.id)
+                        end
+                    end
                 end
+
+                if #validServers > 0 then
+                    foundServer = validServers[math.random(1, #validServers)]
+                    break
+                end
+
+                if result.nextPageCursor then
+                    cursor = result.nextPageCursor
+                else
+                    break
+                end
+            else
+                task.wait(1)
             end
         end
 
-        if #servers > 0 then
-            executeTeleport(servers[math.random(1, #servers)])
+        if foundServer then
+            executeTeleport(foundServer)
         else
-            executeTeleport(nil)
+            -- إذا فحص كل السيرفرات، يصفر القائمة ويبحث من جديد
+            _G.VisitedServers = {game.JobId}
+            statusLabel.Text = "⚠️ جاري إعادة محاولة البحث..."
+            task.wait(1)
+            serverHop()
         end
     end)
 end
 
 manualHopBtn.MouseButton1Click:Connect(serverHop)
 
--- فحص السيرفر بحثاً عن حيوان 1B+
+-- فحص دقيق للحيوانات على الأرض فقط (استبعاد اللاعبين وقوائم الشراء ولوحة الصدارة)
 local function check1BPetInServer()
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            for _, petName in ipairs(HighTier1BPets) do
-                if string.find(string.lower(obj.Name), string.lower(petName)) then
-                    return obj.Name
-                end
+        -- التأكد أن الكائن ليس جزءاً من شخصية أي لاعب
+        local isPlayer = false
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character and obj:IsDescendantOf(plr.Character) then
+                isPlayer = true
+                break
             end
         end
-    end
 
-    for _, gui in ipairs(Workspace:GetDescendants()) do
-        if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-            local txt = gui.Text
-            if string.find(txt, "B/s") or string.find(txt, "B") then
-                for num in string.gmatch(txt, "(%d+%.?%d*)B") do
-                    local val = tonumber(num)
-                    if val and val >= 1.0 then
-                        return "حيوان (" .. txt .. ")"
+        if not isPlayer then
+            -- استبعاد شاشات الواجهة والقوائم وقوائم الشراء
+            if not (obj:IsA("SurfaceGui") or obj:IsA("ScreenGui")) then
+                -- 1. فحص أسماء مجسمات الحيوانات المترسبنة
+                if obj:IsA("Model") or obj:IsA("BasePart") then
+                    for _, petName in ipairs(HighTier1BPets) do
+                        if string.find(string.lower(obj.Name), string.lower(petName)) then
+                            return obj.Name
+                        end
+                    end
+                end
+
+                -- 2. فحص النص العائم فوق البيض/الحيوانات المترسبنة على الأرض فقط
+                if obj:IsA("BillboardGui") and obj.Parent and obj.Parent.Name ~= "Head" then
+                    for _, child in ipairs(obj:GetDescendants()) do
+                        if child:IsA("TextLabel") or child:IsA("TextButton") then
+                            local txt = child.Text
+                            if string.find(txt, "B/s") or string.find(txt, "B") then
+                                for num in string.gmatch(txt, "(%d+%.?%d*)B") do
+                                    local val = tonumber(num)
+                                    if val and val >= 1.0 then
+                                        return "حيوان مترسبن (" .. txt .. ")"
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
             end
@@ -190,7 +252,7 @@ local function check1BPetInServer()
     return nil
 end
 
--- نافذة السؤال المنبثقة (تظهر لمدة 10 ثوانٍ)
+-- نافذة السؤال المنبثقة (10 ثوانٍ)
 local function showPrompt()
     local promptFrame = Instance.new("Frame")
     promptFrame.Name = "PromptFrame"
@@ -280,19 +342,17 @@ local function showPrompt()
     end)
 end
 
--- حساب المتبقي لانتهاء دورة الـ 5 دقائق متزامنة مع الساعة
+-- حساب التوقيت المتبقي لانتهاء دورة 5 دقائق
 local function getTimeRemainingIn5MinCycle()
     local now = os.time()
-    local secondsLeft = 300 - (now % 300)
-    return secondsLeft
+    return 300 - (now % 300)
 end
 
--- الدورة الرئيسية المزامنة
+-- الحلقة الرئيسية المتزامنة مع الماب
 task.spawn(function()
     while true do
         local timeLeft = getTimeRemainingIn5MinCycle()
         
-        -- إذا كان باقي أكثر من ثوانٍ معدودة، نعرض العداد التنازلي
         while timeLeft > 2 do
             timeLeft = getTimeRemainingIn5MinCycle()
             local mins = math.floor(timeLeft / 60)
@@ -302,22 +362,21 @@ task.spawn(function()
             task.wait(1)
         end
 
-        -- وصلنا لوقت الرسبون بالضبط
         statusLabel.Text = "⚡ رسبن الماب الآن! جاري فحص الحيوانات..."
         statusLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
-        task.wait(2) -- انتظار ثانيتين لتحميل كائنات الماب الجديدة
+        task.wait(2.5) -- انتظار تحميل الكائنات الجديدة بالماب
 
         local found1BPet = check1BPetInServer()
 
         if found1BPet then
             statusLabel.Text = "🎉 تم العثور على حيوان 1B+!\n" .. found1BPet
             statusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-            break -- يتوقف السكربت لتستمتع بالحيوان
+            break
         else
             statusLabel.Text = "❌ لم يترسبن حيوان 1B+."
             statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
             showPrompt()
-            break -- إظهار نافذة التنبيه والخيار للمستخدم
+            break
         end
     end
 end)
