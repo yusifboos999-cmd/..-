@@ -1,9 +1,8 @@
 -- ============================================
--- GitHub Mobile Main Menu Server Hop (Delta)
+-- Mobile Main Menu Server Hop (Delta Executor)
 -- ============================================
 
--- ضع رابط الـ RAW الخاص بملفك على GitHub هنا
-local github_raw_url = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/script.lua"
+local github_raw_url = "https://raw.githubusercontent.com/yusifboos999-cmd/..-/refs/heads/main/Main.lua"
 
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
@@ -35,7 +34,7 @@ toggleBtn.TextColor3 = Color3.fromRGB(0, 170, 255)
 toggleBtn.Text = "📜"
 toggleBtn.TextSize = 22
 toggleBtn.Active = true
-toggleBtn.Draggable = true -- يمكنك تحريكه بأي مكان في الشاشة
+toggleBtn.Draggable = true
 toggleBtn.Parent = screenGui
 
 local toggleCorner = Instance.new("UICorner")
@@ -55,7 +54,7 @@ mainFrame.Position = UDim2.new(0.5, -130, 0.3, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
-mainFrame.Draggable = true -- يمكنك تحريك القائمة للجوال
+mainFrame.Draggable = true
 mainFrame.Visible = true
 mainFrame.Parent = screenGui
 
@@ -158,18 +157,37 @@ local function hop()
         local placeId = game.PlaceId
         local currentJobId = game.JobId
         local servers = {}
+        local cursor = ""
 
-        local success, result = pcall(function()
-            local req = game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Desc&limit=100")
-            return HttpService:JSONDecode(req)
-        end)
-
-        if success and result and result.data then
-            for _, s in ipairs(result.data) do
-                if type(s) == "table" and s.id ~= currentJobId and s.playing < s.maxPlayers then
-                    table.insert(servers, s.id)
-                end
+        -- جلب السيرفرات عبر البروكسي RoProxy لتجاوز الحظر
+        for page = 1, 3 do
+            local url = "https://games.roproxy.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+            if cursor ~= "" then
+                url = url .. "&cursor=" .. cursor
             end
+
+            local success, result = pcall(function()
+                local req = game:HttpGet(url)
+                return HttpService:JSONDecode(req)
+            end)
+
+            if success and result and result.data then
+                for _, s in ipairs(result.data) do
+                    if type(s) == "table" and s.id ~= currentJobId and s.playing < s.maxPlayers then
+                        table.insert(servers, s.id)
+                    end
+                end
+                
+                if result.nextPageCursor then
+                    cursor = result.nextPageCursor
+                else
+                    break
+                end
+            else
+                break
+            end
+            
+            if #servers > 20 then break end
         end
 
         if #servers > 0 then
@@ -177,10 +195,9 @@ local function hop()
             hopBtn.Text = "جاري الانتقال..."
             executeTeleport(targetServer)
         else
-            hopBtn.Text = "لم يجد سيرفر! أعد المحاولة"
-            task.wait(2)
-            hopBtn.Text = "تغيير السيرفر 🔄"
-            isHopping = false
+            -- خيار احتياطي لتغيير السيرفر عشوائياً إذا تعذر الوصول لـ API
+            hopBtn.Text = "انتقال عشوائي..."
+            executeTeleport(nil)
         end
     end)
 end
