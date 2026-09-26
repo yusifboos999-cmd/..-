@@ -4,12 +4,12 @@ local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 
--- إزالة الواجهة القديمة إذا كانت موجودة
+-- إزالة الواجهة القديمة إن وجدت
 if CoreGui:FindFirstChild("ServerHopGUI") then
     CoreGui.ServerHopGUI:Destroy()
 end
 
--- إنشاء الواجهة
+-- إنشاء الواجهة الأساسية للجوال
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ServerHopGUI"
 ScreenGui.Parent = CoreGui
@@ -51,7 +51,7 @@ local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(0, 8)
 BtnCorner.Parent = ChangeServerBtn
 
--- نظام السحب للجوال
+-- نظام السحب باللمس مخصص للجوال
 local dragging, dragInput, dragStart, startPos
 
 MainMenu.InputBegan:Connect(function(input)
@@ -81,7 +81,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- نظام البحث والتنقل المطور
+-- نظام تغيير السيرفر العشوائي
 local isSearching = false
 
 ChangeServerBtn.MouseButton1Click:Connect(function()
@@ -91,54 +91,28 @@ ChangeServerBtn.MouseButton1Click:Connect(function()
 
     task.spawn(function()
         local PlaceId = game.PlaceId
-        local foundServer = nil
-        local cursor = ""
-        local attempts = 0
+        local validServers = {}
 
-        -- البحث في عدة صفحات حتى العثور على سيرفر فارغ
-        while attempts < 5 and not foundServer do
-            attempts = attempts + 1
-            local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-            if cursor ~= "" then
-                url = url .. "&cursor=" .. cursor
-            end
+        local success, result = pcall(function()
+            return game:HttpGet("https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&limit=100")
+        end)
 
-            local success, result = pcall(function()
-                return game:HttpGet(url)
-            end)
-
-            if success and result then
-                local data = HttpService:JSONDecode(result)
-                if data and data.data then
-                    local lowPlayerServers = {}
-                    for _, server in ipairs(data.data) do
-                        if server.id ~= game.JobId and server.playing <= 2 and (server.maxPlayers and server.playing < server.maxPlayers) then
-                            table.insert(lowPlayerServers, server.id)
-                        end
+        if success and result then
+            local data = HttpService:JSONDecode(result)
+            if data and data.data then
+                for _, server in ipairs(data.data) do
+                    -- استبعاد السيرفر الحالي والسيرفرات الممتلئة
+                    if server.id ~= game.JobId and (server.maxPlayers and server.playing < server.maxPlayers) then
+                        table.insert(validServers, server.id)
                     end
-
-                    if #lowPlayerServers > 0 then
-                        foundServer = lowPlayerServers[math.random(1, #lowPlayerServers)]
-                        break
-                    end
-
-                    if data.nextPageCursor then
-                        cursor = data.nextPageCursor
-                    else
-                        break
-                    end
-                else
-                    break
                 end
-            else
-                break
             end
-            task.wait(0.1)
         end
 
-        if foundServer then
+        if #validServers > 0 then
             ChangeServerBtn.Text = "Teleporting..."
-            TeleportService:TeleportToPlaceInstance(PlaceId, foundServer, Players.LocalPlayer)
+            local randomServer = validServers[math.random(1, #validServers)]
+            TeleportService:TeleportToPlaceInstance(PlaceId, randomServer, Players.LocalPlayer)
         else
             ChangeServerBtn.Text = "No Server Found"
             task.wait(2)
